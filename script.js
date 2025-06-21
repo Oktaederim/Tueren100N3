@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         doorHeight: "2.00", // Türhöhe 2,00 m
         differentialPressure: "50", // Differenzdruck 50 Pa
         doorCloserMoment: "0", // Türschließermoment 0 Nm
-        b2Distance: "0.01", // Abstand zur Drehachse b2 0,01 m (kleinster physikalisch sinnvoller Wert ungleich 0)
+        b2Distance: "0.50", // Abstand zur Drehachse b2 0,50 m (Standard)
         volumeFlow: "2.0", // Volumenstrom 2,0 m³/s
         roomType: "Sicherheitstreppenraum"
     };
@@ -52,10 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const Q_s = parseFloat(volumeFlowInput.value); // Volumenstrom in m³/s
 
         // --- Validierung für b2 ---
-        // b2 muss kleiner als B sein (mit etwas Puffer). Mindestabstand 0.01m zur Türbreite, um phys. Sinn zu erhalten und Div/0 zu vermeiden
+        // b2 muss kleiner als B sein (mit etwas Puffer).
+        // Wenn B=0, dann kann b2 nur 0 sein.
         const currentDoorWidth = parseFloat(doorWidthInput.value);
-        const newMaxB2 = Math.max(0.01, currentDoorWidth - 0.01); 
-        // Den Max-Wert des Sliders und Inputs dynamisch anpassen
+        let newMaxB2 = currentDoorWidth - 0.01; 
+        if (newMaxB2 < 0) newMaxB2 = 0; // b2 kann nicht negativ sein
+
         b2DistanceSlider.max = newMaxB2;
         b2DistanceInput.max = newMaxB2;
 
@@ -66,10 +68,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Die updateInputFromSlider/updateSliderFromInput sorgen dafür
             console.warn(`b2 wurde auf max. zulässigen Wert (${newMaxB2.toFixed(2)}m) begrenzt.`);
         }
-        // Auch sicherstellen, dass b2 nicht kleiner als das Minimum des Sliders/Inputs ist (0.01)
-        if (b2 < 0.01) {
-            b2 = 0.01;
-            console.warn("b2 wurde auf min. zulässigen Wert (0.01m) begrenzt.");
+        // Auch sicherstellen, dass b2 nicht kleiner als das Minimum des Sliders/Inputs ist (0)
+        if (b2 < 0) {
+            b2 = 0;
+            console.warn("b2 wurde auf min. zulässigen Wert (0m) begrenzt.");
         }
         // Stellen Sie sicher, dass die angezeigten Werte auch nach der Begrenzung korrekt sind
         b2DistanceInput.value = b2.toFixed(2);
@@ -91,13 +93,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let FT = 0;
         let F_Mo_contribution = 0; // Anteil des Türschließers in N
 
-        if (b2 > 0) { // Division durch Null vermeiden (sollte durch b2 validation oben abgedeckt sein, aber doppelt hält besser)
-            FT = FT_numerator / b2;
-            F_Mo_contribution = M0 / b2;
-        } else {
-            FT = Infinity; // Wenn b2 0 ist, ist die Kraft unendlich
+        if (b2 === 0) { // Division durch Null oder sehr kleinen Wert behandeln
+            FT = Infinity; // Physikalisch unendliche Kraft am Drehpunkt
             F_Mo_contribution = Infinity;
             console.warn("b2 ist Null, die Betätigungskraft ist unendlich.");
+        } else {
+            FT = FT_numerator / b2;
+            F_Mo_contribution = M0 / b2;
         }
         
         // Sicherstellen, dass FT nicht negativ wird, falls M0 zu klein ist und deltaP 0 ist (unwahrscheinlich, aber für Robustheit)
@@ -113,17 +115,23 @@ document.addEventListener('DOMContentLoaded', () => {
         operatingForceResult.classList.remove('text-ok', 'text-danger');
         operatingForceStatus.classList.remove('text-ok', 'text-danger');
 
-        if (FT <= 100) {
+        if (Number.isFinite(FT) && FT <= 100) { // Nur bei endlichen Werten prüfen
             operatingForceDisplay.classList.add('bg-ok');
             operatingForceResult.classList.add('text-ok');
             operatingForceStatus.classList.add('text-ok');
             operatingForceStatus.textContent = 'Status: OK (≤ 100 N)';
-        } else {
+        } else if (Number.isFinite(FT) && FT > 100) {
             operatingForceDisplay.classList.add('bg-danger');
             operatingForceResult.classList.add('text-danger');
             operatingForceStatus.classList.add('text-danger');
             operatingForceStatus.textContent = 'Status: NICHT OK (> 100 N)! Erhöhte Betätigungskraft.';
+        } else { // Für Unendlich oder NaN
+            operatingForceDisplay.classList.add('bg-danger'); // oder eine neutrale Farbe
+            operatingForceResult.classList.add('text-danger');
+            operatingForceStatus.classList.add('text-danger');
+            operatingForceStatus.textContent = 'Status: NICHT DEFINIERT (physikalisch unmöglich/unendlich)';
         }
+
 
         // Berechnete Durchströmungsgeschwindigkeit (v = Q / A)
         let v = 0;
@@ -154,35 +162,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedRoomType = document.querySelector('input[name="roomType"]:checked').value;
 
-        if (selectedRoomType === 'Sicherheitstreppenraum') {
-            if (v >= 2.0) {
-                airflowVelocityDisplay.classList.add('bg-ok');
-                airflowVelocityResult.classList.add('text-ok');
-                airflowVelocityStatus.classList.add('text-ok');
-                airflowVelocityStatus.textContent = 'Status: OK (≥ 2,0 m/s für Sicherheitstreppenraum)';
-            } else if (v >= 1.0 && v < 2.0) {
-                airflowVelocityDisplay.classList.add('bg-warning');
-                airflowVelocityResult.classList.add('text-warning');
-                airflowVelocityStatus.classList.add('text-warning');
-                airflowVelocityStatus.textContent = 'Status: Achtung (≥ 1,0 m/s, aber < 2,0 m/s)! Ggf. unter bestimmten Bedingungen zulässig.';
-            } else {
-                airflowVelocityDisplay.classList.add('bg-danger');
-                airflowVelocityResult.classList.add('text-danger');
-                airflowVelocityStatus.classList.add('text-danger');
-                airflowVelocityStatus.textContent = 'Status: NICHT OK (< 1,0 m/s)! Strömungsgeschwindigkeit zu gering.';
+        if (Number.isFinite(v)) { // Nur bei endlichen Werten prüfen
+            if (selectedRoomType === 'Sicherheitstreppenraum') {
+                if (v >= 2.0) {
+                    airflowVelocityDisplay.classList.add('bg-ok');
+                    airflowVelocityResult.classList.add('text-ok');
+                    airflowVelocityStatus.classList.add('text-ok');
+                    airflowVelocityStatus.textContent = 'Status: OK (≥ 2,0 m/s für Sicherheitstreppenraum)';
+                } else if (v >= 1.0 && v < 2.0) {
+                    airflowVelocityDisplay.classList.add('bg-warning');
+                    airflowVelocityResult.classList.add('text-warning');
+                    airflowVelocityStatus.classList.add('text-warning');
+                    airflowVelocityStatus.textContent = 'Status: Achtung (≥ 1,0 m/s, aber < 2,0 m/s)! Ggf. unter bestimmten Bedingungen zulässig.';
+                } else {
+                    airflowVelocityDisplay.classList.add('bg-danger');
+                    airflowVelocityResult.classList.add('text-danger');
+                    airflowVelocityStatus.classList.add('text-danger');
+                    airflowVelocityStatus.textContent = 'Status: NICHT OK (< 1,0 m/s)! Strömungsgeschwindigkeit zu gering.';
+                }
+            } else if (selectedRoomType === 'Feuerwehraufzug') {
+                if (v >= 0.75) {
+                    airflowVelocityDisplay.classList.add('bg-ok');
+                    airflowVelocityResult.classList.add('text-ok');
+                    airflowVelocityStatus.classList.add('text-ok');
+                    airflowVelocityStatus.textContent = 'Status: OK (≥ 0,75 m/s für Feuerwehraufzugsvorraum)';
+                } else {
+                    airflowVelocityDisplay.classList.add('bg-danger');
+                    airflowVelocityResult.classList.add('text-danger');
+                    airflowVelocityStatus.classList.add('text-danger');
+                    airflowVelocityStatus.textContent = 'Status: NICHT OK (< 0,75 m/s)! Strömungsgeschwindigkeit zu gering.';
+                }
             }
-        } else if (selectedRoomType === 'Feuerwehraufzug') {
-            if (v >= 0.75) {
-                airflowVelocityDisplay.classList.add('bg-ok');
-                airflowVelocityResult.classList.add('text-ok');
-                airflowVelocityStatus.classList.add('text-ok');
-                airflowVelocityStatus.textContent = 'Status: OK (≥ 0,75 m/s für Feuerwehraufzugsvorraum)';
-            } else {
-                airflowVelocityDisplay.classList.add('bg-danger');
-                airflowVelocityResult.classList.add('text-danger');
-                airflowVelocityStatus.classList.add('text-danger');
-                airflowVelocityStatus.textContent = 'Status: NICHT OK (< 0,75 m/s)! Strömungsgeschwindigkeit zu gering.';
-            }
+        } else { // Für Unendlich oder NaN
+            airflowVelocityDisplay.classList.add('bg-danger'); // oder eine neutrale Farbe
+            airflowVelocityResult.classList.add('text-danger');
+            airflowVelocityStatus.classList.add('text-danger');
+            airflowVelocityStatus.textContent = 'Status: NICHT DEFINIERT (physikalisch unmöglich/unendlich)';
         }
     };
 
@@ -259,8 +274,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Funktion zur dynamischen Anpassung des b2-Sliders und Inputs Max-Wertes und Wertanpassung
     const updateB2RangeAndValue = () => {
         const currentDoorWidth = parseFloat(doorWidthInput.value);
-        // Wenn Türbreite 0 ist, kann b2 nicht definiert werden, setze max auf ein kleines Minimum (z.B. 0.01)
-        const newMaxB2 = (currentDoorWidth > 0) ? currentDoorWidth - 0.01 : 0.01; 
+        // Wenn Türbreite 0 ist, dann kann b2 nur 0 sein. Ansonsten muss b2 kleiner als Türbreite sein.
+        // Ein kleiner Puffer (z.B. 0.01m) ist sinnvoll, damit b2 nicht exakt gleich B wird, was zu Division durch 0 führen könnte
+        const newMaxB2 = (currentDoorWidth > 0) ? currentDoorWidth - 0.01 : 0; 
         
         b2DistanceSlider.max = newMaxB2;
         b2DistanceInput.max = newMaxB2;
@@ -270,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentB2 > newMaxB2) {
             b2DistanceInput.value = newMaxB2.toFixed(2);
             b2DistanceSlider.value = newMaxB2.toFixed(2);
-        } else if (currentB2 < parseFloat(b2DistanceInput.min)) { 
+        } else if (currentB2 < parseFloat(b2DistanceInput.min)) { // b2 kann nicht negativ sein, min ist 0
             b2DistanceInput.value = parseFloat(b2DistanceInput.min).toFixed(2);
             b2DistanceSlider.value = parseFloat(b2DistanceInput.min).toFixed(2);
         }
