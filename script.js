@@ -95,16 +95,17 @@ document.addEventListener('DOMContentLoaded', () => {
             FT = FT_numerator / b2;
             F_Mo_contribution = M0 / b2;
         } else {
-            FT = 0; // oder ein geeigneter Fehlerwert
-            F_Mo_contribution = 0;
-            console.warn("b2 ist Null oder negativ, kann nicht durch Null teilen. FT und F_Mo_contribution auf 0 gesetzt.");
+            FT = Infinity; // Wenn b2 0 ist, ist die Kraft unendlich
+            F_Mo_contribution = Infinity;
+            console.warn("b2 ist Null, die Betätigungskraft ist unendlich.");
         }
         
         // Sicherstellen, dass FT nicht negativ wird, falls M0 zu klein ist und deltaP 0 ist (unwahrscheinlich, aber für Robustheit)
         if (FT < 0) FT = 0;
 
-        operatingForceResult.textContent = FT.toFixed(2);
-        doorCloserForceContribution.textContent = `(davon Türschließer: ${F_Mo_contribution.toFixed(2)} N)`;
+        // Handling Infinity/NaN for display
+        operatingForceResult.textContent = Number.isFinite(FT) ? FT.toFixed(2) : (FT === Infinity ? "∞" : "N/A");
+        doorCloserForceContribution.textContent = Number.isFinite(F_Mo_contribution) ? `(davon Türschließer: ${F_Mo_contribution.toFixed(2)} N)` : "(Türschließer: ∞ N)";
 
 
         // Farbliche Kennzeichnung und Status für Betätigungskraft
@@ -126,10 +127,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Berechnete Durchströmungsgeschwindigkeit (v = Q / A)
         let v = 0;
-        if (A > 0) { // Division durch Null vermeiden
+        if (A === 0) { // Explicitly handle A = 0
+            if (Q_s === 0) {
+                v = 0; // 0/0 is NaN, but physically 0 velocity if no flow and no area
+            } else {
+                v = Infinity; // Flow through zero area is infinite velocity
+            }
+            console.warn("Türfläche ist 0. Durchströmungsgeschwindigkeit ist unendlich oder 0.");
+        } else {
             v = Q_s / A;
         }
-        airflowVelocityResult.textContent = v.toFixed(2);
+        
+        // Handling Infinity/NaN for display
+        airflowVelocityResult.textContent = Number.isFinite(v) ? v.toFixed(2) : (v === Infinity ? "∞" : "N/A");
+
 
         // Durchströmungsvolumen in m³/h
         const Q_h = Q_s * 3600;
@@ -248,8 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Funktion zur dynamischen Anpassung des b2-Sliders und Inputs Max-Wertes und Wertanpassung
     const updateB2RangeAndValue = () => {
         const currentDoorWidth = parseFloat(doorWidthInput.value);
-        const newMaxB2 = Math.max(0.01, currentDoorWidth - 0.01); 
-
+        // Wenn Türbreite 0 ist, kann b2 nicht definiert werden, setze max auf ein kleines Minimum (z.B. 0.01)
+        const newMaxB2 = (currentDoorWidth > 0) ? currentDoorWidth - 0.01 : 0.01; 
+        
         b2DistanceSlider.max = newMaxB2;
         b2DistanceInput.max = newMaxB2;
 
@@ -258,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentB2 > newMaxB2) {
             b2DistanceInput.value = newMaxB2.toFixed(2);
             b2DistanceSlider.value = newMaxB2.toFixed(2);
-        } else if (currentB2 < parseFloat(b2DistanceInput.min)) { // Auch wenn unter min (sollte nicht passieren, da min 0.01)
+        } else if (currentB2 < parseFloat(b2DistanceInput.min)) { 
             b2DistanceInput.value = parseFloat(b2DistanceInput.min).toFixed(2);
             b2DistanceSlider.value = parseFloat(b2DistanceInput.min).toFixed(2);
         }
